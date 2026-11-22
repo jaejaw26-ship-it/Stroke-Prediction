@@ -1,6 +1,562 @@
 ---
-title: "Data Analysis"
+title: "Stroke Prediction Data Analysis"
 author: "Jaeyeong Kim"
 date: "`r Sys.Date()`"
 output: pdf_document
 ---
+
+# Data Information
+This project looks into the Stroke Prediction Dataset by fedesoriano on Kaggle. The data set is used to predict the likelihood of a patient getting a stroke based on factors such as gender, age, various diseases, and smoking status.
+
+Link to dataset: https://www.kaggle.com/datasets/fedesoriano/stroke-prediction-dataset/data
+
+## Loading the Packages
+```{r}
+library(tidyverse)
+library(corrplot)
+library(patchwork)
+```
+
+## Loading the Data
+```{r}
+Data <- read.csv(
+  "healthcare-dataset-stroke-data.csv",
+  header = TRUE,
+  stringsAsFactors = FALSE,
+  na.strings = c("N/A", "Unknown")
+)
+```
+The NAs in this dataset are shown as "N/A" and "Unknown".
+
+## Data Cleaning
+```{r}
+#Checking for Missing Data 
+colSums(is.na(Data))
+
+#Removing Missing Data
+Data_clean <- Data |>
+  drop_na()
+
+nrow(Data) - nrow(Data_clean)
+#removed 1684 rows of N/A
+```
+1684 rows were removed from the dataset due to their missing BMI data or unknown smoking status. 
+
+# Exploratory Data Analysis
+
+## Inspecting the Data
+```{r}
+str(Data_clean)
+summary(Data_clean)
+```
+
+
+## Distribution Plots for all Relevant Variables
+```{r}
+dgender <- ggplot(Data_clean, aes(x = gender)) +
+  geom_bar(fill = "orange", color = "black") +
+  labs(title = "Gender Distribution", x = "Gender", y = "Count")
+
+dage <- ggplot(Data_clean, aes(x = age)) +
+  geom_histogram(bins = 30, fill = "red", color = "black") +
+  labs(title = "Age Distribution", x = "Age", y = "Count")
+
+dht <- ggplot(Data_clean, aes(x = factor(hypertension))) +
+  geom_bar(fill = "yellow", color = "black") +
+  labs(title = "Hypertension binary", x = "Hypertension", y = "Count")
+
+dhd <- ggplot(Data_clean, aes(x = factor(heart_disease))) +
+  geom_bar(fill = "lightgreen", color = "black") +
+  labs(title = "Heart disease binary", x = "Heart Disease", y = "Count")
+
+dem <- ggplot(Data_clean, aes(x = ever_married)) +
+  geom_bar(fill = "skyblue", color = "black") +
+  labs(title = "Patient ever married?", x = "Ever Married", y = "Count")
+
+dbmi <- ggplot(Data_clean, aes(x = bmi)) +
+  geom_histogram(bins = 30, fill = "purple", color = "black") +
+  labs(title = "BMI Distribution", x = "BMI (kg/m²)", y = "Count")
+
+distributions1 <- (dgender + dage + dht + dhd + dem + dbmi) + plot_layout(ncol = 3)
+
+distributions1
+```
+
+```{r}
+#part 2 due to high quantity of variables
+dwt <- ggplot(Data_clean, aes(x = work_type)) +
+  geom_bar(fill = "blue", color = "black") +
+  coord_flip() +
+  labs(title = "Occupation Distribution", x = "Work Type", y = "Count")
+
+drt <- ggplot(Data_clean, aes(x = Residence_type)) +
+  geom_bar(fill = "darkblue", color = "black") +
+  labs(title = "Residence Distribution", x = "Residence Type", y = "Count")
+
+dgl <- ggplot(Data_clean, aes(x = avg_glucose_level)) +
+  geom_histogram(bins = 30, fill = "pink", color = "black") +
+  labs(title = "AVG Glucose Level Distribution", x = "Glucose Level (mg/dL)", y = "Count")
+
+dss <- ggplot(Data_clean, aes(x = smoking_status)) +
+  geom_bar(fill = "brown", color = "black") +
+  coord_flip() +
+  labs(title = "Smoking Status Distribution", x = "Status", y = "Count")
+
+distributions2 <- (dwt + drt + dgl + dss) + plot_layout(ncol = 2)
+
+distributions2
+```
+
+## Summary Stats of Variables
+```{r}
+summary_stats <- Data_clean |>
+  select(age, hypertension, heart_disease, bmi, avg_glucose_level) |>
+  summarize(across(
+    everything(),
+    list(
+      mean = ~mean(.x),
+      sd = ~sd(.x)
+    )
+  )) |>
+  pivot_longer(
+    everything(),
+    names_to = c("variable", "stat"),
+    names_pattern = "^(.*)_(mean|sd)$"
+  ) |>
+  pivot_wider(names_from = stat, values_from = value)
+
+summary_stats
+```
+
+From here onward, a new variable, stroke rate, will be created to be compared one on one to all the different variables in the data set. Stroke rate will be the mean variable of the stroke data after the variable of interest has been grouped.
+
+### Stroke Rate vs Gender
+```{r}
+#Grouping gender & applying stroke rate
+stroke_vs_gender <- Data_clean |>
+  filter(gender %in% c("Male", "Female")) |>
+  mutate(stroke_num = as.numeric(as.character(stroke))) |>
+  group_by(gender) |>
+  summarize(
+    n = n(),
+    n_stroke = sum(stroke),
+    stroke_rate = mean(stroke),
+    .groups = "drop"
+  ) |>
+  arrange(gender)
+
+ggplot(stroke_vs_gender, aes(x = reorder(gender, -stroke_rate), y = stroke_rate, fill = gender)) +
+  geom_col(show.legend = FALSE) +
+  scale_y_continuous(labels = scales::percent_format()) +
+  labs(
+    title = "Stroke Rate by Gender",
+    x = "Gender",
+    y = "Stroke Rate"
+  )
+```
+
+Two-proportion z-test
+```{r}
+prop.test(
+  x = stroke_vs_gender$n_stroke,
+  n = stroke_vs_gender$n,
+  correct = FALSE
+)
+```
+The stroke rate for females and males respectively are 5% and 5.6%. With the CI comfortably including 0 and a 0.4676 p-value, it is likely that gender is not a significant factor when considering stroke rate. 
+
+
+
+### Stroke Rate vs Age
+```{r}
+#Grouping age & applying stroke rate
+stroke_vs_age <- Data_clean |>
+  mutate(stroke_num = as.numeric(as.character(stroke))) |>
+  group_by(age) |>
+  summarize(
+    n = n(),
+    n_stroke = sum(stroke),
+    stroke_rate = mean(stroke),
+    .groups = "drop"
+  ) |>
+  arrange(age)
+
+ggplot(stroke_vs_age, aes(x = age, y = stroke_rate)) + 
+  geom_point() +
+  geom_jitter() +
+  geom_smooth(method = "lm") +
+  labs(
+    title = "Age's Effect on Stroke Rate",
+    x = ("Age [years]"),
+    y = ("Stroke Rate [total strokes / n]")
+  )
+```
+
+OLS and Pearson's product-moment correlation test
+```{r}
+stroke_age_lm <- lm(stroke_rate ~ age, data = stroke_vs_age)
+summary(stroke_age_lm)
+
+cor.test(stroke_vs_age$stroke_rate, stroke_vs_age$age)
+
+b0age <- coef(stroke_age_lm)["(Intercept)"]
+b1age <- coef(stroke_age_lm)["age"]
+
+x_intercept_age <- -b0age / b1age
+x_intercept_age
+```
+The slope of the OLS estimated model for age vs stroke rate is 0.00264 which alongside t = 11.165, p < 2e-16, R² = 0.64 is considered to be significant according to the lm summary. This model implies that each extra year of age adds about 0.26 percentage point chance to the stroke rate. 
+However, when looking at the scatter plot, it's easy to notice that the actual relationship between age and stroke rate seems to begin at approximately age 35. To account for this, another model was made only counting the datasets above age 35. 
+
+### Stroke Rate vs Age for Age > 35
+```{r}
+Data_clean35 <- Data_clean |>
+   filter(age > 35)
+
+stroke_vs_age35 <- Data_clean35 |>
+  mutate(
+    stroke_num = as.numeric(as.character(stroke)),
+    bmi_num = as.numeric(bmi)
+  ) |>
+  group_by(age) |>
+  summarize(
+    n = n(),
+    n_stroke = sum(stroke_num),
+    stroke_rate = mean(stroke_num)
+  ) |>
+  ungroup() |>
+  arrange(age)
+
+ggplot(stroke_vs_age35, aes(x = age, y = stroke_rate)) + 
+  geom_point() +
+  geom_jitter() +
+  geom_smooth(method = "lm") +
+  labs(
+    title = "Age's Effect on Stroke Rate (when age > 35)",
+    x = ("Age [years]"),
+    y = ("Stroke Rate [total strokes / n]")
+  )
+```
+
+```{r}
+stroke_age35_lm <- lm(stroke_rate ~ age, data = stroke_vs_age35)
+summary(stroke_age35_lm)
+
+cor.test(stroke_vs_age35$stroke_rate, stroke_vs_age35$age)
+```
+The slope of the new OLS estimated model is 0.0044106 which alongside t = 9.387, p = 3.63e-12, R² = 0.6619 is also considered to be significant according to the lm summary. This model implies that each extra year of age adds about 0.44 percentage point chance to the stroke rate which is  about 1.7 times the relationship found in the initial model.  
+
+### Stroke Rate vs Hypertension
+```{r}
+stroke_vs_ht <- Data_clean |>
+  mutate(stroke_num = as.numeric(as.character(stroke))) |>
+  group_by(hypertension) |>
+  summarize(
+    n = n(),
+    n_stroke = sum(stroke),
+    stroke_rate = mean(stroke),
+    .groups = "drop"
+  ) |>
+  arrange(hypertension)
+
+ggplot(stroke_vs_ht, aes(x = reorder(hypertension, -stroke_rate), y = stroke_rate, fill = hypertension)) +
+  geom_col(show.legend = FALSE) +
+  scale_y_continuous(labels = scales::percent_format()) +
+  labs(
+    title = "Stroke Rate by Hypertension",
+    x = "Hypertension",
+    y = "Stroke Rate"
+  )
+```
+
+Two-proportion z-test
+```{r}
+prop.test(
+  x = stroke_vs_ht$n_stroke,
+  n = stroke_vs_ht$n,
+  correct = FALSE
+)
+```
+The stroke rate for patients without and with hypertension are respectively 4.08% and 14.0%. The chances of a stroke more than triples with hypertension, and with a chi-squared score of 70.694 and a 2.2e-16 p-value, it is likely that hypertension is a significant factor when considering stroke rate. 
+
+
+### Stroke Rate vs Heart Disease
+```{r}
+stroke_vs_hd <- Data_clean |>
+  group_by(heart_disease) |>
+  summarize(
+    n = n(),
+    n_stroke = sum(stroke),
+    stroke_rate = mean(stroke),
+    .groups = "drop"
+  ) |>
+  arrange(heart_disease)
+
+ggplot(stroke_vs_hd, aes(x = reorder(heart_disease, -stroke_rate), y = stroke_rate, fill = heart_disease)) +
+  geom_col(show.legend = FALSE) +
+  scale_y_continuous(labels = scales::percent_format()) +
+  labs(
+    title = "Stroke Rate by Heart Disease",
+    x = "Heart Disease",
+    y = "Stroke Rate"
+  )
+```
+
+Two-proportion z-test
+```{r}
+prop.test(x = stroke_vs_hd$n_stroke, n = stroke_vs_hd$n, correct = FALSE)
+```
+The stroke rate for patients without and with heart disease are respectively 4.5% and 17.5%. The chances of a stroke almost quadruples with heart disease, and with a chi-squared score of 65.77 and a 5.07e-16 p-value, it is very likely that heart disease is a significant factor when considering stroke rate. 
+
+### Stroke Rate vs Marriage
+```{r}
+stroke_vs_em <- Data_clean |>
+  group_by(ever_married) |>
+  summarize(
+    n = n(),
+    n_stroke = sum(stroke),
+    stroke_rate = mean(stroke),
+    .groups = "drop"
+  ) |>
+  arrange(ever_married)
+
+ggplot(stroke_vs_em, aes(x = reorder(ever_married, -stroke_rate), y = stroke_rate, fill = ever_married)) +
+  geom_col(show.legend = FALSE) +
+  scale_y_continuous(labels = scales::percent_format()) +
+  labs(
+    title = "Stroke Rate by Marriage Status",
+    x = "Marriage History",
+    y = "Stroke Rate"
+  )
+
+```
+
+Two-proportion z-test
+```{r}
+prop.test(x = stroke_vs_em$n_stroke, n = stroke_vs_em$n, correct = FALSE)
+```
+The stroke rate for patients with and without a history of marriage are respectively 6.2% and 2.4%. With a chi-squared score of 17.6 and a 2.714e-05 p-value, it is likely that marriage is a significant factor when relating with stroke rate. However, for marriage, it is important to take into account that the variable of marriage is a proxy for age, which would strongly imply correlation instead of causation. 
+
+### Stroke Rate vs Work Type
+```{r}
+stroke_vs_wt <- Data_clean |>
+  group_by(work_type) |>
+  summarize(
+    n = n(),
+    n_stroke = sum(stroke),
+    stroke_rate = mean(stroke),
+    .groups = "drop"
+  ) |>
+  arrange(work_type)
+
+ggplot(stroke_vs_wt, aes(x = reorder(work_type, -stroke_rate), y = stroke_rate, fill = work_type)) +
+  geom_col(show.legend = FALSE) +
+  scale_y_continuous(labels = scales::percent_format()) +
+  labs(
+    title = "Stroke Rate by Work Type",
+    x = "Work Type",
+    y = "Stroke Rate"
+  )
+
+```
+
+Chi-square test for equality of proportions
+```{r}
+prop.test(x = stroke_vs_wt$n_stroke, n = stroke_vs_wt$n, correct = FALSE)
+```
+
+The stroke rate for patients with different work types are 4.5% for government, 4.95% for private, and 7.6% for self employed. When also taking account for never worked and children, the test gives a chi-squared score of 12.7 and a 0.0127 p-value. This could show that work is a significant factor when considering stroke rate, but the fact that no people in the never worked category and children have had strokes could have greatly affected the test. 
+
+
+### Stroke Rate vs Residence Type
+```{r}
+stroke_vs_rt <- Data_clean |>
+  group_by(Residence_type) |>
+  summarize(
+    n = n(),
+    n_stroke = sum(stroke),
+    stroke_rate = mean(stroke),
+    .groups = "drop"
+  ) |>
+  arrange(Residence_type)
+
+ggplot(stroke_vs_rt, aes(x = reorder(Residence_type, -stroke_rate), y = stroke_rate, fill = Residence_type)) +
+  geom_col(show.legend = FALSE) +
+  scale_y_continuous(labels = scales::percent_format()) +
+  labs(
+    title = "Stroke Rate by Residence Type",
+    x = "Residence Type",
+    y = "Stroke Rate"
+  )
+```
+
+Chi-square test for equality of proportions
+```{r}
+prop.test(x = stroke_vs_rt$n_stroke, n = stroke_vs_rt$n, correct = FALSE)
+```
+
+The stroke rates for rural and urban residence types respectively are 5.1% and 5.4%. With the chi squared value being only 0.126 and a 0.72 p-value, it is likely that residence type is not a significant factor when considering stroke rate. 
+
+### Stroke Rate vs Smoking Status
+```{r}
+stroke_vs_ss <- Data_clean |>
+  group_by(smoking_status) |>
+  summarize(
+    n = n(),
+    n_stroke = sum(stroke),
+    stroke_rate = mean(stroke),
+    .groups = "drop"
+  ) |>
+  arrange(smoking_status)
+
+ggplot(stroke_vs_ss, aes(x = reorder(smoking_status, -stroke_rate), y = stroke_rate, fill = smoking_status)) +
+  geom_col(show.legend = FALSE) +
+  scale_y_continuous(labels = scales::percent_format()) +
+  labs(
+    title = "Stroke Rate by Smoking Status",
+    x = "Smoking Status",
+    y = "Stroke Rate"
+  )
+```
+
+Chi-square test for equality of proportions
+```{r}
+prop.test(x = stroke_vs_ss$n_stroke, n = stroke_vs_ss$n, correct = FALSE)
+```
+
+The stroke rate for patients with a different smoking histories are 4.5% for patients who never smoked, 5.3% for patients who currently smoke, and 6.8% for patients who formerly smoked. The test gives a chi-squared score of 5.99 and a 0.04996 p-value which means it's at the cutoff for significance at alpha = 0.05. 
+
+### Stroke Rate vs Average Glucose Level
+```{r}
+stroke_vs_agl <- Data_clean |>
+  group_by(avg_glucose_level) |>
+  summarize(
+    n = n(),
+    n_stroke = sum(stroke),
+    stroke_rate = mean(stroke),
+    .groups = "drop"
+  ) |>
+  arrange(avg_glucose_level)
+
+ggplot(stroke_vs_agl, aes(x = avg_glucose_level, y = stroke_rate)) + 
+  geom_point() +
+  geom_jitter() +
+  labs(
+    title = "Average Glucose Level's Effect on Stroke Rate",
+    x = ("Average Glucose Level [mg/dL]"),
+    y = ("Stroke Rate [total strokes / n]")
+  )
+```
+
+OLS and Pearson's product-moment correlation test
+```{r}
+stroke_agl_lm <- lm(stroke_rate ~ avg_glucose_level, data = stroke_vs_agl)
+summary(stroke_agl_lm)
+
+cor.test(stroke_vs_agl$stroke_rate, stroke_vs_agl$avg_glucose_level)
+```
+The slope of the OLS estimated model for average glucose level vs stroke rate is 6.7e-04 which alongside t = 8.3, p = 2.2e-16, R² = 0.023 is considered to be significant according to the lm summary. This model implies that each extra 1mg/dL of average glucose level adds about 0.0067% chance to the stroke rate. 
+
+
+### Stroke Rate vs BMI
+```{r}
+stroke_vs_bmi <- Data_clean |>
+  group_by(bmi) |>
+  summarize(
+    n = n(),
+    n_stroke = sum(stroke),
+    stroke_rate = mean(stroke),
+    .groups = "drop"
+  ) |>
+  arrange(bmi)
+
+ggplot(stroke_vs_bmi, aes(x = bmi, y = stroke_rate)) + 
+  geom_point() +
+  geom_jitter() +
+  labs(
+    title = "BMI's Effect on Stroke Rate",
+    x = ("BMI/Body Mass Index [kg/m²]"),
+    y = ("Stroke Rate [total strokes / n]")
+  ) 
+```
+
+OLS and Pearson's product-moment correlation test
+```{r}
+stroke_bmi_lm <- lm(stroke_rate ~ bmi, data = stroke_vs_bmi)
+summary(stroke_bmi_lm)
+
+cor.test(stroke_vs_bmi$stroke_rate, stroke_vs_bmi$bmi)
+```
+The slope of the OLS estimated model for BMI vs stroke rate is 0.0003 which alongside t = 0.954, p = 0.3404, R² = 0.0022 is not considered to be significant according to the lm summary.  
+
+### Correlation Matrix
+```{r}
+cor_data <- Data_clean |>
+  mutate(
+    bmi = as.numeric(bmi),
+    stroke = as.numeric(stroke),
+    ever_married_num = if_else(ever_married == "Yes", 1, 0),
+    urban_num = if_else(Residence_type == "Urban", 1, 0)
+  ) |>
+  select(
+    age,
+    hypertension,
+    heart_disease,
+    ever_married_num,
+    urban_num,
+    avg_glucose_level,
+    bmi,
+    stroke
+  )
+
+cor_matrix <- cor(cor_data, use = "complete.obs")
+round(cor_matrix, 3)
+
+corrplot(
+  cor_matrix,
+  method = "color",
+  addCoef.col = "black",
+  number.cex = 0.7,
+  tl.col = "black",
+  tl.srt = 45
+)
+```
+
+### Correlation Matrix for Age > 35
+```{r}
+cor_data35 <- Data_clean35 |>
+  mutate(
+    bmi = as.numeric(bmi),
+    stroke = as.numeric(stroke),
+    ever_married_num = if_else(ever_married == "Yes", 1, 0),
+    urban_num = if_else(Residence_type == "Urban", 1, 0)
+  ) |>
+  select(
+    age,
+    hypertension,
+    heart_disease,
+    ever_married_num,
+    urban_num,
+    avg_glucose_level,
+    bmi,
+    stroke
+  )
+
+cor_matrix35 <- cor(cor_data35, use = "complete.obs")
+round(cor_matrix35, 3)
+
+corrplot(
+  cor_matrix35,
+  method = "color",
+  addCoef.col = "black",
+  number.cex = 0.7,
+  tl.col = "black",
+  tl.srt = 45
+)
+```
+
+Two correlation matrices were made, one using all ages and one restricted to patients over 35. 
+
+The first correlation matrix shows the highest correlated between marriage status and age with a correlation of 0.52, which reinforces the earlier discussion when considering the significance of marriage vs stroke rate. There are three variables besides stroke with similar correlations when comparing them to age: hypertension, heart disease, and average glucose level. Residence status seems to have no correlation with other variables, with values around 0. 
+
+Noticeable changes from the second correlation matrix has the correlation between marriage and age becoming virtually nonexistent, which further supports the idea that  the significance found between marriage vs stroke rate was only a byproduct of age. This also makes it so that marriage status loses its correlation to the other variables, similarly to residence status. The new matrix also shows BMI having a negative correlation to age. 
