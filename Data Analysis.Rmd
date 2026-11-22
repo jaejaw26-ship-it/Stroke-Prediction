@@ -559,4 +559,13 @@ Two correlation matrices were made, one using all ages and one restricted to pat
 
 The first correlation matrix shows the highest correlated between marriage status and age with a correlation of 0.52, which reinforces the earlier discussion when considering the significance of marriage vs stroke rate. There are three variables besides stroke with similar correlations when comparing them to age: hypertension, heart disease, and average glucose level. Residence status seems to have no correlation with other variables, with values around 0. 
 
-Noticeable changes from the second correlation matrix has the correlation between marriage and age becoming virtually nonexistent, which further supports the idea that  the significance found between marriage vs stroke rate was only a byproduct of age. This also makes it so that marriage status loses its correlation to the other variables, similarly to residence status. The new matrix also shows BMI having a negative correlation to age. 
+Noticeable changes from the second correlation matrix has the correlation between marriage and age becoming virtually nonexistent, which further supports the idea that  the significance found between marriage vs stroke rate was only a byproduct of age. This also makes it so that marriage status loses its correlation to the other variables, similarly to residence status. The new matrix also shows BMI having a negative correlation to age.
+
+
+# Experimental MLR
+Making a simple model with significant factors 
+```{r}
+MLR <- lm(stroke ~ age + hypertension + heart_disease + avg_glucose_level + work_type + smoking_status, data = Data_clean35)
+summary(MLR)
+```
+All of the variables considered significant were added together to an MLR using OLS from the data with ages above 35. Work type and Smoking status lost their significance, while age, hypertension, heart disease, and average glucose level says significant. As expected, the variables' effects shrank. Hypertension went from a 10 point gap (14.0% vs. 4.08%) to about 5 points, and heart disease from 13 points to about 5.4. The R² = 6.8% is low, which is expected with a rare 0/1 outcome and a linear model. It says nothing about whether the predictors are real. 
